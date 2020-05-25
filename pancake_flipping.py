@@ -27,8 +27,7 @@ class Pancake(pygame.sprite.Sprite):
     """ This class represents a side of a Pancake.
         In the game each Pancake has two objects of this class, one that
         is the top side and one that is the bottom side so that we can 
-        color appropriately for burned-ness. 
-    """
+        color appropriately for burned-ness """
  
     def __init__(self, n, loc, stack_size, side, burnt):
         """ Create the image of the Pancake """
@@ -157,12 +156,12 @@ class Game(object):
 
         # Make our game Buttons
         # Reset button
-        button = Button((SCREEN_WIDTH - 120, 10, 110, 30), "Reset stack", font, self.reset_stack)
-        self.button_list.append(button)
+        button_reset = Button((SCREEN_WIDTH - 120, 10, 110, 30), "Reset stack", font, self.reset_stack)
+        self.button_list.append(button_reset)
 
-        # # Burnt-ness button
-        # button = Button((SCREEN_WIDTH - 120, 45, 110, 30), "Reset stack", font, self.reset_stack)
-        # self.button_list.append(button)
+        # Burnt-ness button
+        button_burnt = Button((SCREEN_WIDTH - 120, 45, 110, 30), "Burned?", font, self.toggle_burntness)
+        self.button_list.append(button_burnt)
 
         # # No. Pancakes button
         # button = Button((SCREEN_WIDTH - 120, 80, 110, 30), "Reset stack", font, self.reset_stack)
@@ -223,11 +222,16 @@ class Game(object):
             pancake = Pancake(self.current_order[i], i, self.stack_size, -1, self.burnt)
             self.pancake_list.add(pancake)   
 
+    def toggle_burntness(self):
+        """ When burntness button is clicked, toggle between burned Pancake
+            and unburned Pancake versions of game. Generate a fresh stack """
+
+        self.__init__(self.stack_size, not self.burnt, self.font)
+
     def run_logic(self):
-        """
-        This method is run each time through the frame. It checks for 
-        Pancake selections and flips them
-        """
+        """ This method is run each time through the frame. It checks for 
+            Pancake selections and flips them """
+
         if not self.game_over:
             
             # Check for collisions with a Button and do an action
@@ -260,10 +264,12 @@ class Game(object):
  
     def display_frame(self, screen, font):
         """ Display everything to the screen for the game """
+        
         screen.fill(BLACK)
         
-        for button in self.button_list:
-            button.draw(screen)
+        if not self.game_over:
+            for button in self.button_list:
+                button.draw(screen)
         self.pancake_list.draw(screen)
       
         text = font.render("Moves: "+str(self.moves), True, WHITE)
