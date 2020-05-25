@@ -129,23 +129,26 @@ class Game(object):
 
         # Create lists to track order of stack
         # This is how the order should be when we win
-        self.goal_order = list(range(1,self.stack_size+1))
+        self.goal_order = list(range(1, self.stack_size+1))
         
         # This is the random starting order
-        order = self.goal_order.copy()
-        random.shuffle(order)
-        if self.burnt:
-            signs = random.choices([-1,1], k=self.stack_size)
-        else:
-            signs = [1]*self.stack_size
-        
-        self.start_order = []
-        for i, j in zip(order, signs):
-            self.start_order.append(i*j)
-
         # Ensure we aren't starting with a winning arrangement
+        self.start_order = self.goal_order.copy()
         while self.start_order == self.goal_order:
-            random.shuffle(self.start_order)
+            # Get a random ordering of pancakes
+            order = self.goal_order.copy()
+            random.shuffle(order)
+            
+            # Get a random ordering of burntness
+            if self.burnt:
+                signs = random.choices([-1,1], k=self.stack_size)
+            else:
+                signs = [1]*self.stack_size
+            
+            # Use the two to create the random starting order
+            self.start_order = []
+            for i, j in zip(order, signs):
+                self.start_order.append(i*j)
 
         # This is the current order (will change with each move)
         self.current_order = self.start_order.copy()
@@ -163,13 +166,17 @@ class Game(object):
         button_burnt = Button((SCREEN_WIDTH - 120, 45, 110, 30), "Burned?", font, self.toggle_burntness)
         self.button_list.append(button_burnt)
 
-        # # No. Pancakes button
-        # button = Button((SCREEN_WIDTH - 120, 80, 110, 30), "Reset stack", font, self.reset_stack)
-        # self.button_list.append(button)
+        # Add Pancake button
+        button_add_pancake = Button((SCREEN_WIDTH - 120, 80, 110, 30), "More food", font, self.add_pancake)
+        self.button_list.append(button_add_pancake)
+
+        # Remove Pancake button
+        button_remove_pancake = Button((SCREEN_WIDTH - 120, 115, 110, 30), "Less food", font, self.remove_pancake)
+        self.button_list.append(button_remove_pancake)
 
         # # Graph theory button
-        # button = Button((SCREEN_WIDTH - 120, 115, 110, 30), "Reset stack", font, self.reset_stack)
-        # self.button_list.append(button)
+        # button_info = Button((SCREEN_WIDTH - 120, 150, 110, 30), "Teach me", font, self.reset_stack)
+        # self.button_list.append(button_info)
 
         # For each slot in stack, make a Pancake sprite
         # Top half of each Pancake (side = 1)
@@ -226,7 +233,27 @@ class Game(object):
         """ When burntness button is clicked, toggle between burned Pancake
             and unburned Pancake versions of game. Generate a fresh stack """
 
-        self.__init__(self.stack_size, not self.burnt, self.font)
+        # Generate new instance of w/ opposite burntness
+        # We always want at least 2 since min size of unburned stack is 2
+        self.__init__(max(self.stack_size, 2), not self.burnt, self.font)
+
+    def add_pancake(self):
+        """ When button is clicked, generate a fresh stack with n+1 Pancakes """
+
+        # Diamater of pancake graph known for burnt flipping up to n=12
+        # Higher for unburned, but we will limit to 12, as that's a lot
+        # For reference, see https://oeis.org/A078941
+        self.__init__(min(self.stack_size + 1, 12), self.burnt, self.font)
+
+    def remove_pancake(self):
+        """ When button is clicked, generate a fresh stack with n-1 Pancakes """
+
+        # Generate a new instance of the game
+        # Unburned needs at least 2 Pancakes
+        if self.burnt:
+            self.__init__(max(self.stack_size - 1, 1), self.burnt, self.font)
+        else:
+            self.__init__(max(self.stack_size - 1, 2), self.burnt, self.font)
 
     def run_logic(self):
         """ This method is run each time through the frame. It checks for 
