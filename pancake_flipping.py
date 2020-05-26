@@ -4,11 +4,10 @@ This file runs the Pancake Flipping Game.
 Nathaniel Schmucker
 """
 
-# TODO: Add buttons for (1) n pancakes (2) burnt-ness
 # TODO: Flip order of image and rect for Button
 # TODO: Add text for upper bound
-# TODO: Add home screen with directions. Click anywhere to begin
-# TODO: Add button to show the "fun stuff" --> Graph theory support
+# TODO: Add text for best possible
+# TODO: Make it pretty. Maybe add audio?
 
 import pygame
 import random
@@ -19,8 +18,86 @@ WHITE    = (255, 255, 255)
 LT_BROWN = (236, 162,  77)
 DK_BROWN = (180,  83,  38)
 
-SCREEN_WIDTH  = 700
-SCREEN_HEIGHT = 500
+SCREEN_WIDTH  = 750
+SCREEN_HEIGHT = 550
+
+INFO_TEXT = [
+    """
+    How to play:
+    1. Click on any pancake to flip it and the pancakes above it
+    2. In as few moves as possible, try to get the stack in order from smallest to
+        largest (smallest at the top) with burnt sides down (when playing with burnt 
+        pancakes)
+    3. When you win, a fresh stack appears
+
+    Notes:
+     - Click the "Reset" button to return the stack to its original order and set 
+        the moves counter to 0
+     - Click the "Burned?" button to toggle between normal and burned pancake 
+        versions of the game
+     - Click the "More food" and "Less food" buttons to change the number of 
+        pancakes
+    """
+    , """
+    In a 1975 issue of The American Mathematical Monthly, an American Geometer 
+    named Jacob Goodman posed an "Elementary Problem" under the pseudonym 
+    of Harry Dweighter (read his name aloud...):
+    
+    "The chef in our place is sloppy, and when he prepares a stack of pancakes they 
+    come out all different sizes. Therefore, when I deliver them to a customer, on the
+    way to the table I rearrange them (so that the smallest winds up on top, and so 
+    on, down to the largest on the bottom) by grabbing several from the top and 
+    flipping them over, repeating this (varying the number I flip) as many times as 
+    necessary. If there are n pancakes, what is the maximum number of flips (as a 
+    function of n) that I will ever have to use to rearrange them?"
+    """
+    , """
+    This question is a variation on the general sorting problem, where the only 
+    permissible operation is _prefix reversal_, that is, if we consider the order of the 
+    stack a sequence (1, 2, ..., n) the reversal of the elements of some prefix of the 
+    sequence. Sequence A058986 describes the maximum number of flips required 
+    for stacks of pancakes up to 19.
+
+    Of an interesting historical note, the only academic mathematics paper published 
+    by William H. Gates (aka Bill Gates...yes, him.) concerns pancake flipping. In a 
+    1979 issue of Discrete Mathematics, he published a paper in conjunction with 
+    Christos H. Papadimitriou, which placed an upper bound of (5 * n + 5) / 3, which
+    was subsequently improved to (18 / 11) * n by a separate team of researchers. 
+    The current estimate is between (15 / 14) * n and (18 / 11) * n, but the exact 
+    value is not known.
+
+    Another articulation of the pancake flipping problem involves burnt pancakes, 
+    which adds a requirement to the original problem by stipulating that each 
+    pancake must end up burnt side down. Sequence A078941 describes the  
+    maximum number of flips required for stacks of pancakes up to 12.
+    """
+    , """
+    In the field of graph theory, a graph is a mathematical structure used to model 
+    pairwise relations between objects. A graph consists of vertices (or nodes), which 
+    are connected by edges. A path is a sequence of edges connecting distinct 
+    vertices. The distance between two vertices is the number of edges in the 
+    shortest path between them. The diameter of a graph is the longest path 
+    between any two vertices.
+
+    A pancake graph, P(n), is a particular type of graph with n! vertices labeled with
+    the permutations of (1, 2, ..., n) and whose edges connect vertices that are
+    transitive by prefix reversal. Thus a 3 pancake graph would have 3 * 2 * 1 = 6 
+    vertices labeled (1, 2, 3), (2, 1, 3), (1, 3, 2), (2, 1, 3), (2, 3, 1), (3, 1, 2), and (3, 2, 1); 
+    vertex (1, 2, 3), for example, would have edges with vertices (2, 1, 3) and (3, 2, 1).
+    """
+    ,"""
+    In this arrangement, each vertex represents a particular ordering of a stack of
+    pancakes, with the first element in the list at the top of the stack. A properly
+    ordered stack would be the identity permutation, (1, 2, ..., n). A path from vertex 
+    A to B is a sequence of spatula flips to get from one arrangement of pancakes to 
+    another. The pancake flipping problem, which counts the most flips necessary to 
+    order a stack of n pancakes, is the same as calculating the diameter of the 
+    pancake graph, P(n).
+
+    In the burnt pancake variation, the vertices a signed (+ or -) and with each prefix 
+    reversal, the sign of the flipped pancakes changes. This graph has n! * 2^n vertices.
+    """
+]
 
 # --- Classes ---
 class Pancake(pygame.sprite.Sprite):
@@ -120,7 +197,9 @@ class Game(object):
     def __init__(self, stack_size, burnt, font):
         """ Create all our attributes to initialize the game """
 
-        self.pos = [0,0]
+        self.pos = [-1,-1]
+        self.show_info = False
+        self.info_item = -1
         self.moves = 0
         self.stack_size = stack_size
         self.burnt = burnt
@@ -153,8 +232,9 @@ class Game(object):
         # This is the current order (will change with each move)
         self.current_order = self.start_order.copy()
 
-        # Create list for Buttons and sprite list for Pancakes
+        # Create lists for Buttons and Menus and sprite list for Pancakes
         self.button_list = []
+        self.info_button_list = []
         self.pancake_list = pygame.sprite.Group()
 
         # Make our game Buttons
@@ -174,9 +254,22 @@ class Game(object):
         button_remove_pancake = Button((SCREEN_WIDTH - 120, 115, 110, 30), "Less food", font, self.remove_pancake)
         self.button_list.append(button_remove_pancake)
 
-        # # Graph theory button
-        # button_info = Button((SCREEN_WIDTH - 120, 150, 110, 30), "Teach me", font, self.reset_stack)
-        # self.button_list.append(button_info)
+        # Display info screen about graph theory button
+        button_display_info = Button((SCREEN_WIDTH - 120, SCREEN_HEIGHT - 45, 110, 30), "Teach me", font, self.display_info)
+        self.button_list.append(button_display_info)
+
+        # Buttons for controling what info text we display
+        # Close info screen button
+        button_close_info = Button((SCREEN_WIDTH - 120, SCREEN_HEIGHT - 45, 110, 30), "Close", font, self.close_info)
+        self.info_button_list.append(button_close_info)
+
+        # Next info screen button
+        button_next_info = Button((SCREEN_WIDTH - 240, SCREEN_HEIGHT - 45, 110, 30), "Next", font, self.next_info)
+        self.info_button_list.append(button_next_info)
+        
+        # Previous info screen button
+        button_previous_info = Button((SCREEN_WIDTH - 360, SCREEN_HEIGHT - 45, 110, 30), "Back", font, self.previous_info)
+        self.info_button_list.append(button_previous_info)
 
         # For each slot in stack, make a Pancake sprite
         # Top half of each Pancake (side = 1)
@@ -188,22 +281,6 @@ class Game(object):
         for i in range(self.stack_size):
             pancake = Pancake(self.current_order[i], i, self.stack_size, -1, self.burnt)
             self.pancake_list.add(pancake)
-
-    def process_events(self):
-        """ Process all of the events. Return a "True" if we need
-            to close the window """
-
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                return True
-            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                # Get the current mouse position
-                self.pos = pygame.mouse.get_pos()
-
-                if self.game_over:
-                    self.__init__(self.stack_size, self.burnt, self.font)
- 
-        return False
  
     def reset_stack(self):
         """ When reset button is clicked, set moves to zero and
@@ -255,12 +332,59 @@ class Game(object):
         else:
             self.__init__(max(self.stack_size - 1, 2), self.burnt, self.font)
 
+    def display_info(self):
+        """ Open the info screen, starting at the first screen """
+        
+        self.info_item =  0
+        self.show_info = True
+
+    def close_info(self):
+        """ Close the info screens to return to game """
+
+        self.show_info = False
+
+    def next_info(self):
+        """ Advance to the next screen, close if we run out """
+        
+        self.info_item += 1
+        if self.info_item == len(INFO_TEXT):
+            self.close_info()
+
+    def previous_info(self):
+        """ Return to the prior screen, close if we run out """
+        
+        self.info_item += -1
+        if self.info_item == -1:
+            self.close_info()
+
+    def draw_long_text(self, screen, font, long_text, xy):
+        lines = long_text.splitlines()
+        for i, l in enumerate(lines):
+            text = font.render(l, True, WHITE)
+            screen.blit(text, (xy[0], xy[1] + font.get_linesize()*i))
+    
+    def process_events(self):
+        """ Process all of the events. Return a "True" if we need
+            to close the window """
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return True
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                # Get the current mouse position
+                self.pos = pygame.mouse.get_pos()
+
+                # After winning, restart on click
+                if self.game_over:
+                    self.__init__(self.stack_size, self.burnt, self.font)
+ 
+        return False
+
     def run_logic(self):
         """ This method is run each time through the frame. It checks for 
             Pancake selections and flips them """
-
-        if not self.game_over:
             
+        if not self.show_info:
             # Check for collisions with a Button and do an action
             for button in self.button_list:
                 if button.rect.collidepoint(self.pos):
@@ -273,8 +397,8 @@ class Game(object):
                     pancakes_to_flip = pancake.loc + 1
                     
                     # Record a move
-                    self.moves += 1      
-
+                    self.moves += 1
+                    
             # Update Pancakes
             self.pancake_list.update(pancakes_to_flip) 
             
@@ -282,40 +406,53 @@ class Game(object):
             for pancake in self.pancake_list:
                 self.current_order[pancake.loc] = pancake.n
 
-            # "Unclick"
-            self.pos = [0,0]
-
             # Did we win?
             if self.current_order == self.goal_order:
                 self.game_over = True
+        
+        else:
+            # Check for collisions with an info Button and do an action
+            for info_button in self.info_button_list:
+                if info_button.rect.collidepoint(self.pos):
+                    info_button.function()
+        
+        # "Unclick"
+        self.pos = [-1,-1]
  
     def display_frame(self, screen, font):
         """ Display everything to the screen for the game """
         
         screen.fill(BLACK)
         
-        if not self.game_over:
-            for button in self.button_list:
-                button.draw(screen)
-        self.pancake_list.draw(screen)
-      
-        text = font.render("Moves: "+str(self.moves), True, WHITE)
-        screen.blit(text, [10, 10])
+        if not self.show_info:
+            if not self.game_over:
+                for button in self.button_list:
+                    button.draw(screen)
+            else: 
+                text = font.render("You win! Click to restart", True, WHITE)
+                center_x = (SCREEN_WIDTH // 2) - (text.get_width() // 2)
+                center_y = (SCREEN_HEIGHT - 30) - (text.get_height() // 2)
+                screen.blit(text, [center_x, center_y])
+            
+            self.pancake_list.draw(screen)
+        
+            text = font.render("Moves: "+str(self.moves), True, WHITE)
+            screen.blit(text, [10, 10])
 
-        # text = font.render("Start order: "+str(self.start_order), True, WHITE)
-        # screen.blit(text, [10, 35])
+            text = font.render("Start order: "+str(self.start_order), True, WHITE)
+            screen.blit(text, [10, 35])
 
-        # text = font.render("Goal order: "+str(self.goal_order), True, WHITE)
-        # screen.blit(text, [10, 60])
+            text = font.render("Current order: "+str(self.current_order), True, WHITE)
+            screen.blit(text, [10, 60])
 
-        # text = font.render("Current order: "+str(self.current_order), True, WHITE)
-        # screen.blit(text, [10, 85])
+            text = font.render("Goal order: "+str(self.goal_order), True, WHITE)
+            screen.blit(text, [10, 85])
 
-        if self.game_over:
-            text = font.render("You win! Click to restart", True, WHITE)
-            center_x = (SCREEN_WIDTH // 2) - (text.get_width() // 2)
-            center_y = (SCREEN_HEIGHT - 30) - (text.get_height() // 2)
-            screen.blit(text, [center_x, center_y])
+        else:
+            for info_button in self.info_button_list:
+                info_button.draw(screen)
+            
+            self.draw_long_text(screen, font, INFO_TEXT[self.info_item], [10, 10])
 
         pygame.display.flip()
 
