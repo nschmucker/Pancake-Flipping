@@ -1,13 +1,9 @@
 """
 pancake_flipping.py
-This file runs the Pancake Flipping Game.
+This file runs The Harried Waiter game.
+Developed on Python 3.7.6
 Nathaniel Schmucker
 """
-
-# TODO: Flip order of image and rect for Button
-# TODO: Add text for upper bound
-# TODO: Add text for best possible
-# TODO: Make it pretty. Maybe add audio?
 
 import pygame
 import random
@@ -20,6 +16,23 @@ DK_BROWN = (180,  83,  38)
 
 SCREEN_WIDTH  = 750
 SCREEN_HEIGHT = 550
+
+# Regular: https://oeis.org/A058986
+# Burned:  https://oeis.org/A078941
+DIAMETER = {
+    1: {"regular": 0, "burned": 1},
+    2: {"regular": 1, "burned": 4},
+    3: {"regular": 3, "burned": 6},
+    4: {"regular": 4, "burned": 8},
+    5: {"regular": 5, "burned": 10},
+    6: {"regular": 7, "burned": 12},
+    7: {"regular": 8, "burned": 14},
+    8: {"regular": 9, "burned": 15},
+    9: {"regular": 10, "burned": 17},
+    10: {"regular": 11, "burned": 18},
+    11: {"regular": 13, "burned": 19},
+    12: {"regular": 14, "burned": 21}
+}
 
 INFO_TEXT = [
     """
@@ -37,8 +50,8 @@ INFO_TEXT = [
         versions of the game
      - Click the "More food" and "Less food" buttons to change the number of 
         pancakes
+    """,
     """
-    , """
     In a 1975 issue of The American Mathematical Monthly, an American Geometer 
     named Jacob Goodman posed an "Elementary Problem" under the pseudonym 
     of Harry Dweighter (read his name aloud...):
@@ -70,8 +83,8 @@ INFO_TEXT = [
     which adds a requirement to the original problem by stipulating that each 
     pancake must end up burnt side down. Sequence A078941 describes the  
     maximum number of flips required for stacks of pancakes up to 12.
+    """,
     """
-    , """
     In the field of graph theory, a graph is a mathematical structure used to model 
     pairwise relations between objects. A graph consists of vertices (or nodes), which 
     are connected by edges. A path is a sequence of edges connecting distinct 
@@ -84,8 +97,8 @@ INFO_TEXT = [
     transitive by prefix reversal. Thus a 3 pancake graph would have 3 * 2 * 1 = 6 
     vertices labeled (1, 2, 3), (2, 1, 3), (1, 3, 2), (2, 1, 3), (2, 3, 1), (3, 1, 2), and (3, 2, 1); 
     vertex (1, 2, 3), for example, would have edges with vertices (2, 1, 3) and (3, 2, 1).
+    """,
     """
-    ,"""
     In this arrangement, each vertex represents a particular ordering of a stack of
     pancakes, with the first element in the list at the top of the stack. A properly
     ordered stack would be the identity permutation, (1, 2, ..., n). A path from vertex 
@@ -96,18 +109,156 @@ INFO_TEXT = [
 
     In the burnt pancake variation, the vertices a signed (+ or -) and with each prefix 
     reversal, the sign of the flipped pancakes changes. This graph has n! * 2^n vertices.
-    """
+    """,
 ]
 
 # --- Classes ---
+class Graph:
+    """ This class represents a pancake graph, P(n). Since the graph has
+        up to n! * 2^n vertices, we don't store the entire set of 
+        vertices and edges. Instead, we have methods designed for 
+        traversing from vertex A to vertex B using a variation of 
+        Breadth First Searching knowns as Dijkstra's Algorithm. We start
+        with a single vertex and only track vertices that are discovered
+        during the BFS.
+        The class has methods for running BFS, seeking which vertices
+        have been discovered, and reporting the length of the shortest
+        path from A to B, as well as the vertices on the path.
+        The class accepts burnt pancakes. Edges are unweighted.
+    """
+
+    def __init__(self, start, goal, burnt):
+        self.start = start
+        self.goal = goal
+        self.burnt = burnt
+        self.visited = {}
+        self.fewest_moves = None
+        self.best_path = []
+
+    def flip(self, vertex_name, n_to_flip):
+        """ Given a vertex and an index, perform prefix reversal. """
+        
+        new_vertex_name = []
+        if self.burnt:
+            b = -1
+        else:
+            b = 1
+
+        # Loop through the vertex and reverse the order (and possibly 
+        # sign) of the first n_to_flip items (0-indexed)
+        for i in range(len(vertex_name)):
+            if i <= n_to_flip:
+                j = n_to_flip - i
+                new_vertex_name.append(vertex_name[j]*b)
+            else:
+                j = i
+                new_vertex_name.append(vertex_name[j])
+        return new_vertex_name
+    
+    def make_vertex_key(self, vertex_name):
+        """ Translate from [int, int, int] to "str:str:str". """
+
+        return ":".join([str(i) for i in vertex_name])
+        
+    def make_vertex_name(self, vertex_key):
+        """ Translate from "str:str:str" to [int, int, int]. """
+
+        return [int(i) for i in vertex_key.split(":")]
+        
+    def find_neighbors(self, vertex_key):
+        """ Given a vertex_key, provide a list of all neighboring
+            vertex_keys, where neighbors are reachable via prefix
+            reversal.
+        """
+
+        neighbors = []
+        
+        # Since the algorithm only call this method on visited vertices,
+        # we can use the dictionary to get the name.
+        vertex_name = self.visited[vertex_key]["name"]
+
+        # Complete all possible prefix reversals and append the 
+        # vertex_keys to our list.
+        for i in range(len(vertex_name)):
+            neighbor = self.flip(vertex_name, i)
+            neighbor = self.make_vertex_key(neighbor)
+            neighbors.append(neighbor)
+        
+        return neighbors
+
+    def BFS(self):
+        """ We implement a version of Dijkstra's Algorithm,
+            (https://en.wikipedia.org/wiki/Dijkstra%27s_algorithm), 
+            which modifies the typical Breadth First Search algorithm
+            to find the shortest path between two vertices on a graph.
+        """
+        # Clear the list of visited vertices
+        self.visited = {}
+
+        # Create a queue
+        queue = []
+
+        # Mark the start vertex as visited and enqueue it 
+        start_key = self.make_vertex_key(self.start)
+        self.visited[start_key] = {
+            "name": self.start,
+            "dist": 0,
+            "prev": None
+        }
+        queue.append(start_key) 
+
+        while queue: 
+            # Dequeue a vertex from queue
+            vertex_key = queue.pop(0)
+
+            # If the vertex is the goal vertex, update our knowledge
+            # of the shortest path and the vertices on the path
+            if vertex_key == self.make_vertex_key(self.goal):
+                self.fewest_moves = self.visited[vertex_key]["dist"]
+                self.best_path = self.traceback()
+                
+            # Get all adjacent vertices of the dequeued vertex. If
+            # an adjacent vertex has not been visited, then mark it
+            # visited and enqueue it.
+            # 
+            # If it has already been visited, the new path will be
+            # longer. If not, the new path is one more than how we got 
+            # to our current location. 
+            else:
+                for i in self.find_neighbors(vertex_key): 
+                    if i not in self.visited:
+                        self.visited[i] = {
+                            "name": self.make_vertex_name(i),
+                            "dist": self.visited[vertex_key]["dist"] + 1,
+                            "prev": vertex_key
+                        }
+                        queue.append(i)
+    
+    def traceback(self):
+        """ Generate a list of vertex_keys on the shortest path from
+            start to goal.
+        """
+
+        # Starting from the end, work our way from prev to prev until
+        # we reach the start
+        sequence = []
+        i = self.make_vertex_key(self.goal)
+        while i is not None:
+            sequence.insert(0, i) # Insertion into the front of list
+            i = self.visited[i]["prev"]
+        
+        return sequence
+
+
 class Pancake(pygame.sprite.Sprite):
     """ This class represents a side of a Pancake.
         In the game each Pancake has two objects of this class, one that
         is the top side and one that is the bottom side so that we can 
-        color appropriately for burned-ness """
+        color appropriately for burned-ness.
+    """
  
     def __init__(self, n, loc, stack_size, side, burnt):
-        """ Create the image of the Pancake """
+        """ Create the image of the Pancake. """
 
         # Call the parent class (Sprite) constructor
         super().__init__()
@@ -122,13 +273,15 @@ class Pancake(pygame.sprite.Sprite):
         self.image = pygame.Surface([100 + 30 * abs(self.n), 10])
         if not self.burnt:
             self.image.fill(LT_BROWN)
-        elif (self.side == 1 and self.n > 0) or (self.side == -1 and self.n < 0):
+        elif ((self.side == 1 and self.n > 0) 
+            or (self.side == -1 and self.n < 0)):
             self.image.fill(LT_BROWN)
         else:
             self.image.fill(DK_BROWN)
 
-        # Fetch the rectangle object that has the dimensions of the image.
-        # Update the position object by setting values of rect_*.x and rect_*.y
+        # Fetch the rectangle object that has the dimensions of the 
+        # image. Update the position object by setting values of 
+        # rect_*.x and rect_*.y
         self.rect = self.image.get_rect()
         self.rect.x = (SCREEN_WIDTH // 2) - ((100 + 30 * abs(self.n)) // 2)
         if self.side == 1:
@@ -148,12 +301,12 @@ class Pancake(pygame.sprite.Sprite):
         self.loc = n_to_flip - self.loc - 1
 
     def update_side(self):
-        """ If Pancake was the top (1), make bottom (-1) """
+        """ If Pancake was the top (1), make bottom (-1). """
 
         self.side = -self.side
     
     def update_y(self):
-        """ Reposition Pancake based on side and location """
+        """ Reposition Pancake based on side and location. """
 
         if self.side == 1:
             self.rect.y = (SCREEN_HEIGHT - 50) - (30 * (self.stack_size - self.loc))
@@ -161,13 +314,14 @@ class Pancake(pygame.sprite.Sprite):
             self.rect.y = (SCREEN_HEIGHT - 50) - (30 * (self.stack_size - self.loc)) + 10
     
     def update(self, n_to_flip):
-        """ Flip Pancake if it is at the top of the stack """
+        """ Flip Pancake if it is at the top of the stack. """
 
         if self.loc < n_to_flip:
             self.update_n()
             self.update_loc(n_to_flip)
             self.update_side()
             self.update_y()     # Based on new self.loc and self.side
+
 
 class Button:
     """ This class is for all the buttons on the screen """
@@ -184,18 +338,20 @@ class Button:
         self.text = font.render(text, True, WHITE)
         self.text_rect = self.text.get_rect(center=self.rect.center)
 
-        self.function = function ## e.g. reset_stack
+        self.function = function    # e.g. reset_stack
 
     def draw(self, surf):
         surf.blit(self.image, self.rect)
         surf.blit(self.text, self.text_rect)
 
+
 class Game(object):
     """ This class represents an instance of the game. If we need to
-        restart the game, we create a new instance of this class """
+        restart the game, we create a new instance of this class.
+    """
  
     def __init__(self, stack_size, burnt, font):
-        """ Create all our attributes to initialize the game """
+        """ Create all our attributes to initialize the game. """
 
         self.pos = [-1,-1]
         self.show_info = False
@@ -232,90 +388,140 @@ class Game(object):
         # This is the current order (will change with each move)
         self.current_order = self.start_order.copy()
 
-        # Create lists for Buttons and Menus and sprite list for Pancakes
+        # Generate the pancake_graph and run BFS if it won't take long
+        self.pancake_graph = Graph(self.start_order, self.goal_order, self.burnt)
+        if self.BFS_eligible():
+            self.pancake_graph.BFS()
+
+        # Buttons for controling gameplay
+        button_dict = {
+            "b1": { # Reset to original Pancake order
+                "rect": (SCREEN_WIDTH-120, 10, 110, 30),
+                "text": "Reset stack",
+                "font": font,
+                "function": self.reset_stack
+            },
+            "b2": { # Toggle between regular/burned versions
+                "rect": (SCREEN_WIDTH-120, 45, 110, 30),
+                "text": "Burned?",
+                "font": font,
+                "function": self.toggle_burntness
+            },
+            "b3": {
+                "rect": (SCREEN_WIDTH-120, 80, 110, 30),
+                "text": "More food",
+                "font": font,
+                "function": self.add_pancake
+            },
+            "b4": {
+                "rect": (SCREEN_WIDTH-120, 115, 110, 30),
+                "text": "Less food",
+                "font": font,
+                "function": self.remove_pancake
+            },
+            "b5": { # Show screen with info about the game
+                "rect": (SCREEN_WIDTH-120, SCREEN_HEIGHT-45, 110, 30),
+                "text": "Teach me",
+                "font": font,
+                "function": self.display_info
+            },
+        }
+
+        # Buttons for controling what info text we display
+        info_button_dict = {
+            "b1": {
+                "rect": (SCREEN_WIDTH-120, SCREEN_HEIGHT-45, 110, 30),
+                "text": "Close",
+                "font": font,
+                "function": self.close_info
+            },
+            "b2": {
+                "rect": (SCREEN_WIDTH-240, SCREEN_HEIGHT-45, 110, 30),
+                "text": "Next",
+                "font": font,
+                "function": self.next_info
+            },
+            "b3": {
+                "rect": (SCREEN_WIDTH-360, SCREEN_HEIGHT-45, 110, 30),
+                "text": "Back",
+                "font": font,
+                "function": self.previous_info
+            },
+        }
+
+        # Create lists for Buttons and sprite list for Pancakes
         self.button_list = []
         self.info_button_list = []
         self.pancake_list = pygame.sprite.Group()
 
-        # Make our game Buttons
-        # Reset button
-        button_reset = Button((SCREEN_WIDTH - 120, 10, 110, 30), "Reset stack", font, self.reset_stack)
-        self.button_list.append(button_reset)
+        # Generate all Buttons and Pancakes; add to appropriate lists
+        self.make_buttons(button_dict=button_dict)
+        self.make_info_buttons(button_dict=info_button_dict)
+        self.make_pancake_stack()
 
-        # Burnt-ness button
-        button_burnt = Button((SCREEN_WIDTH - 120, 45, 110, 30), "Burned?", font, self.toggle_burntness)
-        self.button_list.append(button_burnt)
-
-        # Add Pancake button
-        button_add_pancake = Button((SCREEN_WIDTH - 120, 80, 110, 30), "More food", font, self.add_pancake)
-        self.button_list.append(button_add_pancake)
-
-        # Remove Pancake button
-        button_remove_pancake = Button((SCREEN_WIDTH - 120, 115, 110, 30), "Less food", font, self.remove_pancake)
-        self.button_list.append(button_remove_pancake)
-
-        # Display info screen about graph theory button
-        button_display_info = Button((SCREEN_WIDTH - 120, SCREEN_HEIGHT - 45, 110, 30), "Teach me", font, self.display_info)
-        self.button_list.append(button_display_info)
-
-        # Buttons for controling what info text we display
-        # Close info screen button
-        button_close_info = Button((SCREEN_WIDTH - 120, SCREEN_HEIGHT - 45, 110, 30), "Close", font, self.close_info)
-        self.info_button_list.append(button_close_info)
-
-        # Next info screen button
-        button_next_info = Button((SCREEN_WIDTH - 240, SCREEN_HEIGHT - 45, 110, 30), "Next", font, self.next_info)
-        self.info_button_list.append(button_next_info)
+    def BFS_eligible(self):
+        """ Return True if it won't take too long to run the BFS. """
         
-        # Previous info screen button
-        button_previous_info = Button((SCREEN_WIDTH - 360, SCREEN_HEIGHT - 45, 110, 30), "Back", font, self.previous_info)
-        self.info_button_list.append(button_previous_info)
+        return (not self.burnt and self.stack_size < 8
+            or self.burnt and self.stack_size < 6)
 
-        # For each slot in stack, make a Pancake sprite
+    def make_buttons(self, button_dict):
+        """ For each item in dictionary, make a Button (gameplay). """
+
+        for key in button_dict:
+            button = Button(**button_dict[key])
+            self.button_list.append(button)
+
+    def make_info_buttons(self, button_dict):
+        """ For each item in dictionary, make a Button (info). """
+
+        for key in button_dict:
+            button = Button(**button_dict[key])
+            self.info_button_list.append(button)
+
+    def make_pancake_stack(self):
+        """ For each slot in stack, make a Pancake sprite. """
+
         # Top half of each Pancake (side = 1)
         for i in range(self.stack_size):
-            pancake = Pancake(self.current_order[i], i, self.stack_size, 1, self.burnt)
+            pancake = Pancake(
+                self.current_order[i], i,
+                self.stack_size, 1, self.burnt
+            )
             self.pancake_list.add(pancake)
         
         # Bottom half of each Pancake (side = -1)
         for i in range(self.stack_size):
-            pancake = Pancake(self.current_order[i], i, self.stack_size, -1, self.burnt)
-            self.pancake_list.add(pancake)
- 
+            pancake = Pancake(
+                self.current_order[i], i,
+                self.stack_size, -1, self.burnt
+            )
+            self.pancake_list.add(pancake)  
+
     def reset_stack(self):
         """ When reset button is clicked, set moves to zero and
-            create a fresh stack of Pancakes using start_order """
+            create a fresh stack of Pancakes using start_order.
+        """
         
-        # Reset moves to 0
         self.moves = 0
-        
-        # Remove all the Pancake sprites
         self.pancake_list.empty()
-
-        # Reset current order to reflect start order
         self.current_order = self.start_order.copy()
-
-        # For each slot in stack, make a Pancake sprite
-        # Top half of each Pancake (side = 1)
-        for i in range(self.stack_size):
-            pancake = Pancake(self.current_order[i], i, self.stack_size, 1, self.burnt)
-            self.pancake_list.add(pancake)
-        
-        # Bottom half of each Pancake (side = -1)
-        for i in range(self.stack_size):
-            pancake = Pancake(self.current_order[i], i, self.stack_size, -1, self.burnt)
-            self.pancake_list.add(pancake)   
+        self.make_pancake_stack() 
 
     def toggle_burntness(self):
-        """ When burntness button is clicked, toggle between burned Pancake
-            and unburned Pancake versions of game. Generate a fresh stack """
+        """ When burntness button is clicked, toggle between burned 
+            Pancake and unburned Pancake versions of game. Generate a 
+            fresh stack.
+        """
 
         # Generate new instance of w/ opposite burntness
-        # We always want at least 2 since min size of unburned stack is 2
+        # We always want 2+ since min size of unburned stack is 2
         self.__init__(max(self.stack_size, 2), not self.burnt, self.font)
 
     def add_pancake(self):
-        """ When button is clicked, generate a fresh stack with n+1 Pancakes """
+        """ When button is clicked, generate a fresh stack with 
+            n+1 Pancakes.
+        """
 
         # Diamater of pancake graph known for burnt flipping up to n=12
         # Higher for unburned, but we will limit to 12, as that's a lot
@@ -323,41 +529,45 @@ class Game(object):
         self.__init__(min(self.stack_size + 1, 12), self.burnt, self.font)
 
     def remove_pancake(self):
-        """ When button is clicked, generate a fresh stack with n-1 Pancakes """
+        """ When button is clicked, generate a fresh stack with 
+            n-1 Pancakes.
+        """
 
         # Generate a new instance of the game
         # Unburned needs at least 2 Pancakes
         if self.burnt:
-            self.__init__(max(self.stack_size - 1, 1), self.burnt, self.font)
+            self.__init__(max(self.stack_size-1, 1), self.burnt, self.font)
         else:
-            self.__init__(max(self.stack_size - 1, 2), self.burnt, self.font)
+            self.__init__(max(self.stack_size-1, 2), self.burnt, self.font)
 
     def display_info(self):
-        """ Open the info screen, starting at the first screen """
+        """ Open the info screen, starting at the first screen. """
         
         self.info_item =  0
         self.show_info = True
 
     def close_info(self):
-        """ Close the info screens to return to game """
+        """ Close the info screens to return to game. """
 
         self.show_info = False
 
     def next_info(self):
-        """ Advance to the next screen, close if we run out """
+        """ Advance to the next screen, close if we run out. """
         
         self.info_item += 1
         if self.info_item == len(INFO_TEXT):
             self.close_info()
 
     def previous_info(self):
-        """ Return to the prior screen, close if we run out """
+        """ Return to the prior screen, close if we run out. """
         
         self.info_item += -1
         if self.info_item == -1:
             self.close_info()
 
     def draw_long_text(self, screen, font, long_text, xy):
+        """ Helper function for bitting multi-line text """
+        
         lines = long_text.splitlines()
         for i, l in enumerate(lines):
             text = font.render(l, True, WHITE)
@@ -365,7 +575,8 @@ class Game(object):
     
     def process_events(self):
         """ Process all of the events. Return a "True" if we need
-            to close the window """
+            to close the window.
+        """
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -381,8 +592,9 @@ class Game(object):
         return False
 
     def run_logic(self):
-        """ This method is run each time through the frame. It checks for 
-            Pancake selections and flips them """
+        """ This method is run each time through the frame. It checks 
+            for Pancake selections and flips them.
+        """
             
         if not self.show_info:
             # Check for collisions with a Button and do an action
@@ -420,7 +632,7 @@ class Game(object):
         self.pos = [-1,-1]
  
     def display_frame(self, screen, font):
-        """ Display everything to the screen for the game """
+        """ Display everything to the screen for the game. """
         
         screen.fill(BLACK)
         
@@ -433,10 +645,26 @@ class Game(object):
                 center_x = (SCREEN_WIDTH // 2) - (text.get_width() // 2)
                 center_y = (SCREEN_HEIGHT - 30) - (text.get_height() // 2)
                 screen.blit(text, [center_x, center_y])
-            
-            self.pancake_list.draw(screen)
         
-            text = font.render("Moves: "+str(self.moves), True, WHITE)
+            if self.BFS_eligible():
+                text = font.render(
+                    "(Fewest possible moves: "+str(self.pancake_graph.fewest_moves)+")",
+                    True, WHITE
+                )
+                screen.blit(text, [175, 10])
+            elif self.burnt:
+                text = font.render(
+                    "(Possible in "+str(DIAMETER[self.stack_size]["burned"])+" moves or fewer)",
+                    True, WHITE
+                )
+                screen.blit(text, [175, 10])
+            else:
+                text = font.render(
+                    "(Possible in "+str(DIAMETER[self.stack_size]["regular"])+" moves or fewer)",
+                    True, WHITE)
+                screen.blit(text, [175, 10])
+
+            text = font.render("Current moves: "+str(self.moves), True, WHITE)
             screen.blit(text, [10, 10])
 
             text = font.render("Start order: "+str(self.start_order), True, WHITE)
@@ -448,6 +676,8 @@ class Game(object):
             text = font.render("Goal order: "+str(self.goal_order), True, WHITE)
             screen.blit(text, [10, 85])
 
+            self.pancake_list.draw(screen)
+
         else:
             for info_button in self.info_button_list:
                 info_button.draw(screen)
@@ -455,6 +685,7 @@ class Game(object):
             self.draw_long_text(screen, font, INFO_TEXT[self.info_item], [10, 10])
 
         pygame.display.flip()
+
 
 # --- Main function ---
 def main():
@@ -467,13 +698,13 @@ def main():
     screen = pygame.display.set_mode(size)
     font = pygame.font.SysFont("calibri", 20, bold=True)
  
-    pygame.display.set_caption("Pancake Flipping")
+    pygame.display.set_caption("The Harried Waiter")
 
     # Used to manage how fast the screen updates
     clock = pygame.time.Clock()
 
     # Create an instance of the Game class
-    game = Game(4, True, font)
+    game = Game(stack_size=4, burnt=True, font=font)
 
     # Loop until player exits window
     done = False

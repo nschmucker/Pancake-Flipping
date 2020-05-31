@@ -36,8 +36,3 @@ Notes:
 * Click the "Reset" button to return the stack to its original order and set the moves counter to 0
 * Click the "Burned?" button to toggle between normal and burned pancake versions of the game
 * Click the "More food" and "Less food" buttons to change the number of pancakes
-
-#### Future development
-
-* Addition of text that displays the diameter of the pancake graph (an upper bound for how many moves it should take).
-* Addition of text to show best possible score for the particular starting arrangement.
